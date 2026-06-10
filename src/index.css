@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&family=Outfit:wght@200;300;400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  @apply bg-[#030305] text-slate-100 font-sans antialiased overflow-x-hidden;
+  background-image: 
+    radial-gradient(circle at 15% 50%, rgba(244, 63, 94, 0.08), transparent 40%),
+    radial-gradient(circle at 85% 30%, rgba(186, 230, 253, 0.06), transparent 40%),
+    radial-gradient(circle at 50% 80%, rgba(139, 92, 246, 0.08), transparent 50%),
+    radial-gradient(circle, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 100vw 100vh, 100vw 100vh, 100vw 100vh, 32px 32px;
+  background-repeat: no-repeat, no-repeat, no-repeat, repeat;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+@layer utilities {
+  .sidebar-panel {
+    @apply bg-white/[0.02] backdrop-blur-[48px] border border-white/[0.10] shadow-[0_12px_32px_0_rgba(0,0,0,0.18),inset_0_1px_1px_rgba(255,255,255,0.10)] rounded-[2rem];
+  }
+  
+  .ha-card {
+    @apply rounded-[1.75rem] transition-all duration-500 outline-none border relative overflow-hidden backdrop-blur-[28px];
+  }
+
+  .ha-card::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-500 pointer-events-none;
+    background: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.08) 0%, transparent 60%);
+  }
+
+  .ha-card:hover::before {
+    @apply opacity-100;
+  }
+  
+  .ha-card-off {
+    @apply bg-white/[0.04] text-slate-100 border-white/[0.12] shadow-[0_4px_20px_rgba(0,0,0,0.10),inset_0_1px_1px_rgba(255,255,255,0.10)] hover:bg-white/[0.07] hover:border-white/[0.16] hover:-translate-y-1 hover:shadow-[0_8px_28px_rgba(0,0,0,0.14),inset_0_1px_1px_rgba(255,255,255,0.14)];
+  }
+  
+  .ha-card-on {
+    @apply text-white border-amber-300/25 shadow-[0_6px_24px_rgba(250,204,21,0.14),inset_0_1px_1px_rgba(255,255,255,0.18)] hover:-translate-y-1 hover:shadow-[0_10px_32px_rgba(250,204,21,0.22),inset_0_1px_1px_rgba(255,255,255,0.22)];
+    background: linear-gradient(135deg, rgba(254, 240, 138, 0.18) 0%, rgba(250, 204, 21, 0.12) 100%);
+  }
+
+  .glass-pill {
+    @apply bg-white/[0.03] backdrop-blur-[36px] border border-white/[0.10] shadow-[0_6px_20px_0_rgba(0,0,0,0.14),inset_0_1px_1px_rgba(255,255,255,0.10)];
+  }
+
+  .glass-panel {
+    @apply bg-white/[0.025] backdrop-blur-[24px] border border-white/[0.09] shadow-[0_4px_16px_rgba(0,0,0,0.08),inset_0_1px_1px_rgba(255,255,255,0.08)] transition-all;
+  }
+  
+  .glass-panel:hover {
+    @apply bg-white/[0.05] border-white/[0.12] shadow-[0_8px_24px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.12)];
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(to right, #f8fafc, #cbd5e1);
+  }
+
+  .text-gradient-premium {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%);
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

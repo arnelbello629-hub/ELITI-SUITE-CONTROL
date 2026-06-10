@@ -1,0 +1,6 @@
+{
+  "name": "Luxury IoT Suite",
+  "description": "A premium, 5-star hotel style IoT control dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
