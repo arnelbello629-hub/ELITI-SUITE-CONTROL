@@ -202,21 +202,27 @@ export function getToggleAction(
     };
   }
 
+  const domain = device.entityId.split('.')[0];
+
+  // Direct switch/light control (same as iot) — preferred over scene-based toggles
+  if (
+    device.type === 'switch' ||
+    device.type === 'light' ||
+    domain === 'switch' ||
+    domain === 'light'
+  ) {
+    return {
+      domain,
+      service: device.isOn ? 'turn_off' : 'turn_on',
+      entityId: device.entityId,
+    };
+  }
+
   if (device.lightScenes) {
     return {
       domain: 'scene',
       service: 'turn_on',
       entityId: device.isOn ? device.lightScenes.off : device.lightScenes.on,
-    };
-  }
-
-  const domain = device.entityId.split('.')[0];
-
-  if (device.type === 'light' && (domain === 'switch' || domain === 'light')) {
-    return {
-      domain,
-      service: device.isOn ? 'turn_off' : 'turn_on',
-      entityId: device.entityId,
     };
   }
 
@@ -279,9 +285,9 @@ export function resolveAirconFromScenes(
     airconMode = undefined;
   }
 
-  const airconScenes = { on, off };
-  if (isSceneEntityRegistered(auto, stateMap)) airconScenes.auto = auto;
-  if (isSceneEntityRegistered(cool, stateMap)) airconScenes.cool = cool;
+  const airconScenes: NonNullable<Device['airconScenes']> = { on, off };
+  if (isSceneEntityRegistered(auto, stateMap) && auto) airconScenes.auto = auto;
+  if (isSceneEntityRegistered(cool, stateMap) && cool) airconScenes.cool = cool;
 
   return { ...device, isOn, airconMode, airconScenes };
 }

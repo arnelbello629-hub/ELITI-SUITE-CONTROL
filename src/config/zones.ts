@@ -70,39 +70,9 @@ export const ZONE_CONFIG: Zone[] = [
     id: 'dev_team',
     name: 'Dev Team',
     devices: [
-      {
-        id: 'dt_sw1',
-        entityId: 'switch.light_switch_breaker_side_2_switch_4',
-        name: 'Switch Front',
-        type: 'switch',
-        isOn: false,
-        lightScenes: {
-          on: 'scene.entrance_light_2_sw4_on',
-          off: 'scene.entrance_light_2_sw4_off',
-        },
-      },
-      {
-        id: 'dt_sw2',
-        entityId: 'switch.light_switch_breaker_side_2_switch_3',
-        name: 'Switch Middle',
-        type: 'switch',
-        isOn: false,
-        lightScenes: {
-          on: 'scene.entrance_light_2_sw3_on',
-          off: 'scene.entrance_light_2_sw3_off',
-        },
-      },
-      {
-        id: 'dt_sw3',
-        entityId: 'switch.light_switch_breaker_side_2_switch_2',
-        name: 'Switch Back',
-        type: 'switch',
-        isOn: false,
-        lightScenes: {
-          on: 'scene.entrance_light_2_sw2_on',
-          off: 'scene.entrance_light_2_sw2_off',
-        },
-      },
+      { id: 'dt_sw1', entityId: 'switch.light_switch_breaker_side_2_switch_4', name: 'Switch Front', type: 'switch', isOn: false },
+      { id: 'dt_sw2', entityId: 'switch.light_switch_breaker_side_2_switch_3', name: 'Switch Middle', type: 'switch', isOn: false },
+      { id: 'dt_sw3', entityId: 'switch.light_switch_breaker_side_2_switch_2', name: 'Switch Back', type: 'switch', isOn: false },
       { id: 'dt_fan1', entityId: 'fan.dev_team_fan_1', name: 'Fan 1', type: 'fan', isOn: false },
       { id: 'dt_fan2', entityId: 'fan.dev_team_fan_2', name: 'Fan 2', type: 'fan', isOn: false },
       {
@@ -140,17 +110,7 @@ export const ZONE_CONFIG: Zone[] = [
     devices: [
       { id: 'os_indoor', entityId: 'switch.indoor_signage_socket_1', name: 'Indoor Signage', type: 'switch', isOn: false },
       { id: 'os_outdoor', entityId: 'switch.ronnel_plug_socket_1', name: 'Outdoor Signage', type: 'switch', isOn: false },
-      {
-        id: 'os_boss',
-        entityId: 'switch.light_switch_breaker_side_2_switch_1',
-        name: 'Boss Joe Desk',
-        type: 'switch',
-        isOn: false,
-        lightScenes: {
-          on: 'scene.entrance_light_2_sw1_on',
-          off: 'scene.entrance_light_2_sw1_off',
-        },
-      },
+      { id: 'os_boss', entityId: 'switch.light_switch_breaker_side_2_switch_1', name: 'Boss Joe Desk', type: 'switch', isOn: false },
       { id: 'os_carlo', entityId: 'light.carlo_desk', name: 'Sir Carlo Lamp', type: 'light', isOn: false },
       { id: 'os_ronnel', entityId: 'light.ronnel', name: 'Ronnel Lamp', type: 'light', isOn: false },
     ],

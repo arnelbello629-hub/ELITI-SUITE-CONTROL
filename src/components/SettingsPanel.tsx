@@ -119,15 +119,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </h2>
           <div className="space-y-3">
             {zone.devices.map((device) => (
-              <LabelRow
-                key={device.id}
-                deviceId={device.id}
-                type={device.type}
-                entityId={device.entityId}
-                name={device.name}
-                onSave={(label) => onUpdateLabel(device.id, label)}
-                onReset={() => onResetLabel(device.id)}
-              />
+              <div key={device.id}>
+                <LabelRow
+                  deviceId={device.id}
+                  type={device.type}
+                  entityId={device.entityId}
+                  name={device.name}
+                  onSave={(label) => onUpdateLabel(device.id, label)}
+                  onReset={() => onResetLabel(device.id)}
+                />
+              </div>
             ))}
           </div>
         </section>

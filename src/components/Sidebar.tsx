@@ -26,6 +26,7 @@ type SidebarProps = {
   zones: Zone[];
   weather: WeatherInfo | null;
   onRefresh: () => void;
+  onLightsOn: () => void;
   onLightsOff: () => void;
   onFansOff: () => void;
   onAirconOff: () => void;
@@ -106,6 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   zones,
   weather,
   onRefresh,
+  onLightsOn,
   onLightsOff,
   onFansOff,
   onAirconOff,
@@ -114,8 +116,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const stats = useMemo(() => {
     const devices = zones.flatMap((zone) => zone.devices);
+    const lightDevices = devices.filter((d) => d.type === 'light' || d.type === 'switch');
     return {
-      lightsOn: devices.filter((d) => (d.type === 'light' || d.type === 'switch') && d.isOn).length,
+      lightsOn: lightDevices.filter((d) => d.isOn).length,
+      lightsTotal: lightDevices.length,
       fansOn: devices.filter((d) => d.type === 'fan' && d.isOn).length,
       blindsOpen: devices.filter((d) => d.type === 'blind' && d.isOn).length,
       airconOn: devices.filter((d) => d.type === 'aircon' && d.isOn).length,
@@ -215,15 +219,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           <div className="grid grid-cols-1 gap-2">
-            <button
-              type="button"
-              onClick={onLightsOff}
-              disabled={stats.lightsOn === 0}
-              className="flex items-center gap-3 w-full rounded-2xl border border-yellow-200/25 bg-yellow-100/10 px-4 py-2.5 text-left transition-all hover:bg-yellow-100/16 hover:border-yellow-200/40 disabled:opacity-40 disabled:cursor-not-allowed outline-none focus:ring-1 focus:ring-yellow-200/30"
-            >
-              <Lightbulb className="w-4 h-4 text-yellow-200 shrink-0" />
-              <span className="text-[13px] font-medium text-yellow-50">All Lights Off</span>
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onLightsOn}
+                disabled={stats.lightsOn === stats.lightsTotal}
+                className="flex items-center justify-center gap-2 rounded-2xl border border-yellow-200/25 bg-yellow-100/10 px-3 py-2.5 transition-all hover:bg-yellow-100/16 hover:border-yellow-200/40 disabled:opacity-40 disabled:cursor-not-allowed outline-none focus:ring-1 focus:ring-yellow-200/30"
+              >
+                <Lightbulb className="w-4 h-4 text-yellow-200 shrink-0" />
+                <span className="text-[12px] font-semibold text-yellow-50">Lights On</span>
+              </button>
+              <button
+                type="button"
+                onClick={onLightsOff}
+                disabled={stats.lightsOn === 0}
+                className="flex items-center justify-center gap-2 rounded-2xl border border-yellow-200/25 bg-yellow-100/10 px-3 py-2.5 transition-all hover:bg-yellow-100/16 hover:border-yellow-200/40 disabled:opacity-40 disabled:cursor-not-allowed outline-none focus:ring-1 focus:ring-yellow-200/30"
+              >
+                <Lightbulb className="w-4 h-4 text-yellow-200/70 shrink-0" />
+                <span className="text-[12px] font-semibold text-yellow-50">Lights Off</span>
+              </button>
+            </div>
 
             <div className="grid grid-cols-2 gap-2">
               <button

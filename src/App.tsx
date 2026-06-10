@@ -328,11 +328,13 @@ export default function App() {
   const {
     zones,
     toggleDevice,
+    toggleLightByEntityId,
     blindAction,
     setFanLevel,
     setAirconMode,
     weather,
     connectionStatus,
+    turnAllLightsOn,
     turnAllLightsOff,
     turnAllFansOff,
     turnAllAirconOff,
@@ -383,6 +385,7 @@ export default function App() {
           zones={zones}
           weather={weather}
           onRefresh={refreshStates}
+          onLightsOn={turnAllLightsOn}
           onLightsOff={turnAllLightsOff}
           onFansOff={turnAllFansOff}
           onAirconOff={turnAllAirconOff}
@@ -417,7 +420,11 @@ export default function App() {
                         <DeviceCard
                           key={device.id}
                           device={device}
-                          onToggle={() => toggleDevice(zone.id, device.id)}
+                          onToggle={() =>
+                            isLightDevice(device)
+                              ? toggleLightByEntityId(device.entityId)
+                              : toggleDevice(zone.id, device.id)
+                          }
                           onFanLevel={
                             device.type === 'fan'
                               ? (level) => setFanLevel(device.entityId, level)

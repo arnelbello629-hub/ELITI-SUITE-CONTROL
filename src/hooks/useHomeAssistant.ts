@@ -3,7 +3,6 @@ import { ZONE_CONFIG } from '../config/zones';
 import {
   BlindAction,
   callService,
-  fetchAllStates,
   AirconMode,
   fanLevelToPercentage,
   getAirconModeService,
@@ -22,7 +21,10 @@ import {
   WeatherInfo,
   WEATHER_ENTITY_ID,
 } from '../services/homeAssistant';
-import { Zone } from '../types';
+import { recordCommand, shouldSkipCommand } from '../services/commandGate';
+import { logDeviceToggle } from '../services/deviceDebug';
+import { HaWebSocket } from '../services/haWebSocket';
+import { Device, Zone } from '../types';
 import {
   applyDeviceLabels,
   DeviceLabelMap,
@@ -33,6 +35,34 @@ import {
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'offline';
 
+const PENDING_TOGGLE_MS = 4000;
+
+type PendingToggle = {
+  until: number;
+  expectedOn: boolean;
+};
+
+function isLightDevice(device: Device): boolean {
+  return device.type === 'light' || device.type === 'switch';
+}
+
+function getLightDomain(entityId: string): string {
+  return entityId.split('.')[0] ?? 'switch';
+}
+
+function applyPendingToggles(zones: Zone[], pending: Map<string, PendingToggle>): Zone[] {
+  return zones.map((zone) => ({
+    ...zone,
+    devices: zone.devices.map((device) => {
+      const toggle = pending.get(device.entityId);
+      if (toggle && Date.now() < toggle.until) {
+        return { ...device, isOn: toggle.expectedOn };
+      }
+      return device;
+    }),
+  }));
+}
+
 export function useHomeAssistant() {
   const [labels, setLabels] = useState<DeviceLabelMap>(() => loadDeviceLabels());
   const [zones, setZones] = useState<Zone[]>(() => applyDeviceLabels(ZONE_CONFIG, loadDeviceLabels()));
@@ -40,9 +70,36 @@ export function useHomeAssistant() {
     isHaConfigured() ? 'connecting' : 'offline',
   );
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const msgIdRef = useRef(1);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const haRef = useRef<HaWebSocket | null>(null);
+  const labelsRef = useRef(labels);
+  const zonesRef = useRef(zones);
+  const pendingTogglesRef = useRef(new Map<string, PendingToggle>());
+
+  useEffect(() => {
+    labelsRef.current = labels;
+  }, [labels]);
+
+  useEffect(() => {
+    zonesRef.current = zones;
+  }, [zones]);
+
+  const findDeviceByEntityId = useCallback((entityId: string): Device | undefined => {
+    return zonesRef.current.flatMap((zone) => zone.devices).find((device) => device.entityId === entityId);
+  }, []);
+
+  const markPendingToggle = useCallback((entityId: string, expectedOn: boolean) => {
+    pendingTogglesRef.current.set(entityId, {
+      until: Date.now() + PENDING_TOGGLE_MS,
+      expectedOn,
+    });
+  }, []);
+
+  const applyStates = useCallback((states: HassEntityState[]) => {
+    const weatherState = states.find((state) => state.entity_id === WEATHER_ENTITY_ID);
+    setWeather(mapWeatherState(weatherState));
+    const merged = applyDeviceLabels(mergeZonesWithStates(ZONE_CONFIG, states), labelsRef.current);
+    setZones(applyPendingToggles(merged, pendingTogglesRef.current));
+  }, []);
 
   const applyEntityState = useCallback((haState: HassEntityState) => {
     if (haState.entity_id === WEATHER_ENTITY_ID) {
@@ -63,99 +120,191 @@ export function useHomeAssistant() {
           }
 
           const stateKey = device.stateEntityId ?? device.entityId;
-          return stateKey === haState.entity_id ? mapHaStateToDevice(device, haState) : device;
+          if (stateKey !== haState.entity_id) return device;
+
+          const pending = pendingTogglesRef.current.get(stateKey);
+          const haOn = haState.state === 'on';
+
+          if (pending && Date.now() < pending.until) {
+            if (haOn === pending.expectedOn) {
+              pendingTogglesRef.current.delete(stateKey);
+              return mapHaStateToDevice(device, haState);
+            }
+            return { ...device, isOn: pending.expectedOn };
+          }
+
+          return mapHaStateToDevice(device, haState);
         }),
       })),
     );
   }, []);
 
   const loadStates = useCallback(async () => {
-    const states = await fetchAllStates();
-    const weatherState = states.find((state) => state.entity_id === WEATHER_ENTITY_ID);
-    setWeather(mapWeatherState(weatherState));
-    setZones(applyDeviceLabels(mergeZonesWithStates(ZONE_CONFIG, states), labels));
-  }, [labels]);
+    const ha = haRef.current;
+    if (ha?.isConnected) {
+      const states = await ha.getStates();
+      applyStates(states);
+      return;
+    }
 
-  const connectWebSocket = useCallback(() => {
-    if (!isHaConfigured()) return;
+    const states = await fetchAllStatesFallback();
+    applyStates(states);
+  }, [applyStates]);
 
-    setConnectionStatus('connecting');
-    const ws = new WebSocket(getWebSocketUrl());
-    wsRef.current = ws;
+  const invokeService = useCallback(async (
+    domain: string,
+    service: string,
+    entityId: string,
+    data?: Record<string, unknown>,
+  ) => {
+    const ha = haRef.current;
+    if (ha?.isConnected) {
+      await ha.callService(domain, service, entityId, data);
+      return;
+    }
 
-    ws.onopen = () => {
-      // auth_required is sent by HA on connect
-    };
+    await callService(domain, service, entityId, data);
+  }, []);
 
-    ws.onmessage = async (event) => {
-      const message = JSON.parse(event.data);
+  const sendLightCommand = useCallback((
+    device: Device,
+    service: 'turn_on' | 'turn_off',
+    currentOn: boolean,
+    newOn: boolean,
+  ) => {
+    const domain = getLightDomain(device.entityId);
 
-      if (message.type === 'auth_required') {
-        ws.send(JSON.stringify({ type: 'auth', access_token: import.meta.env.VITE_HA_TOKEN }));
-        return;
-      }
+    logDeviceToggle({
+      deviceId: device.id,
+      entityId: device.entityId,
+      name: device.name,
+      currentState: currentOn ? 'on' : 'off',
+      newState: newOn ? 'on' : 'off',
+      command: `${domain}.${service}`,
+    });
 
-      if (message.type === 'auth_ok') {
-        const subscribeId = msgIdRef.current++;
-        ws.send(
-          JSON.stringify({
-            id: subscribeId,
-            type: 'subscribe_events',
-            event_type: 'state_changed',
-          }),
-        );
-        setConnectionStatus('connected');
-        return;
-      }
+    const sentViaWs = haRef.current?.callServiceFireAndForget(domain, service, device.entityId) ?? false;
 
-      if (message.type === 'auth_invalid') {
-        setConnectionStatus('disconnected');
-        ws.close();
-        return;
-      }
+    if (sentViaWs) {
+      logDeviceToggle({
+        entityId: device.entityId,
+        response: 'WebSocket command sent',
+      });
+      return;
+    }
 
-      if (message.type === 'event' && message.event?.event_type === 'state_changed') {
-        const newState = message.event.data?.new_state as HassEntityState | null;
-        if (newState?.entity_id) {
-          applyEntityState(newState);
-        }
-      }
-    };
-
-    ws.onclose = () => {
-      setConnectionStatus('disconnected');
-      wsRef.current = null;
-      reconnectTimerRef.current = setTimeout(connectWebSocket, 5000);
-    };
-
-    ws.onerror = () => {
-      ws.close();
-    };
-  }, [applyEntityState]);
+    void callService(domain, service, device.entityId)
+      .then(() => {
+        logDeviceToggle({
+          entityId: device.entityId,
+          response: 'REST ok',
+        });
+      })
+      .catch((error: unknown) => {
+        logDeviceToggle({
+          entityId: device.entityId,
+          response: `REST failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      });
+  }, []);
 
   useEffect(() => {
     if (!isHaConfigured()) return;
 
-    let cancelled = false;
+    const ha = new HaWebSocket(getWebSocketUrl(), import.meta.env.VITE_HA_TOKEN, {
+      onConnected: () => setConnectionStatus('connected'),
+      onDisconnected: () => setConnectionStatus('disconnected'),
+      onStates: (states) => {
+        applyStates(states);
+        setConnectionStatus('connected');
+      },
+      onStateChanged: applyEntityState,
+    });
 
-    (async () => {
-      try {
-        await loadStates();
-        if (!cancelled) connectWebSocket();
-      } catch {
-        if (!cancelled) setConnectionStatus('disconnected');
-      }
-    })();
+    haRef.current = ha;
+    setConnectionStatus('connecting');
+    ha.connect();
 
     return () => {
-      cancelled = true;
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      wsRef.current?.close();
+      ha.disconnect();
+      haRef.current = null;
     };
-  }, [connectWebSocket, loadStates]);
+  }, [applyEntityState, applyStates]);
 
-  const toggleDevice = useCallback(async (zoneId: string, deviceId: string) => {
-    let previousDevice: Zone['devices'][number] | undefined;
+  const revertDevice = useCallback((
+    zoneId: string,
+    deviceId: string,
+    previousDevice: Zone['devices'][number],
+  ) => {
+    setZones((prev) =>
+      prev.map((zone) => {
+        if (zone.id !== zoneId) return zone;
+        return {
+          ...zone,
+          devices: zone.devices.map((device) =>
+            device.id === deviceId ? previousDevice : device,
+          ),
+        };
+      }),
+    );
+  }, []);
+
+  const toggleLightByEntityId = useCallback((entityId: string) => {
+    const device = findDeviceByEntityId(entityId);
+    if (!device || !isLightDevice(device)) {
+      logDeviceToggle({ entityId, error: 'Light device not found' });
+      return;
+    }
+
+    if (!isHaConfigured()) {
+      logDeviceToggle({ entityId, error: 'Home Assistant not configured' });
+      return;
+    }
+
+    const currentOn = device.isOn;
+    const newOn = !currentOn;
+    const domain = getLightDomain(entityId);
+    const service = newOn ? 'turn_on' : 'turn_off';
+    const commandKey = `${domain}.${service}:{}`;
+
+    if (shouldSkipCommand(entityId, commandKey)) {
+      logDeviceToggle({ entityId, skipped: true, reason: 'duplicate command' });
+      return;
+    }
+
+    recordCommand(entityId, commandKey);
+    markPendingToggle(entityId, newOn);
+
+    setZones((prev) =>
+      prev.map((zone) => ({
+        ...zone,
+        devices: zone.devices.map((d) =>
+          d.entityId === entityId ? { ...d, isOn: newOn } : d,
+        ),
+      })),
+    );
+
+    sendLightCommand(device, service, currentOn, newOn);
+  }, [findDeviceByEntityId, markPendingToggle, sendLightCommand]);
+
+  const toggleDevice = useCallback((zoneId: string, deviceId: string) => {
+    const currentDevice = zonesRef.current
+      .find((zone) => zone.id === zoneId)
+      ?.devices.find((device) => device.id === deviceId);
+
+    if (!currentDevice) {
+      logDeviceToggle({ zoneId, deviceId, error: 'Device not found' });
+      return;
+    }
+
+    if (isLightDevice(currentDevice)) {
+      toggleLightByEntityId(currentDevice.entityId);
+      return;
+    }
+
+    if (!isHaConfigured()) return;
+
+    const previousDevice = currentDevice;
 
     setZones((prev) =>
       prev.map((zone) => {
@@ -164,7 +313,6 @@ export function useHomeAssistant() {
           ...zone,
           devices: zone.devices.map((device) => {
             if (device.id !== deviceId) return device;
-            previousDevice = device;
 
             let newValue = device.value;
             if (device.type === 'blind') {
@@ -177,38 +325,34 @@ export function useHomeAssistant() {
       }),
     );
 
-    if (!previousDevice || !isHaConfigured()) return;
+    const { domain, service, entityId, data } = getToggleAction(previousDevice);
 
-    try {
-      const { domain, service, entityId, data } = getToggleAction(previousDevice);
-      await callService(domain, service, entityId, data);
-      if (
-        previousDevice.type === 'aircon' ||
-        previousDevice.lightScenes ||
-        previousDevice.type === 'light' ||
-        previousDevice.type === 'switch'
-      ) {
-        await loadStates();
-      }
-    } catch {
-      setZones((prev) =>
-        prev.map((zone) => {
-          if (zone.id !== zoneId) return zone;
-          return {
-            ...zone,
-            devices: zone.devices.map((device) =>
-              device.id === deviceId ? previousDevice : device,
-            ),
-          };
-        }),
-      );
-    }
-  }, [loadStates]);
+    logDeviceToggle({
+      deviceId,
+      entityId,
+      name: previousDevice.name,
+      currentState: previousDevice.isOn ? 'on' : 'off',
+      newState: !previousDevice.isOn ? 'on' : 'off',
+      command: `${domain}.${service}`,
+    });
+
+    void invokeService(domain, service, entityId, data)
+      .then(() => {
+        logDeviceToggle({ entityId, response: 'ok' });
+      })
+      .catch((error: unknown) => {
+        logDeviceToggle({
+          entityId,
+          response: `failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        revertDevice(zoneId, deviceId, previousDevice);
+      });
+  }, [invokeService, revertDevice, toggleLightByEntityId]);
 
   const blindAction = useCallback(async (entityId: string, action: BlindAction) => {
     if (!isHaConfigured()) return;
 
-    const device = zones
+    const device = zonesRef.current
       .flatMap((zone) => zone.devices)
       .find((d) => d.entityId === entityId && d.type === 'blind');
 
@@ -216,12 +360,11 @@ export function useHomeAssistant() {
 
     try {
       const { domain, service, entityId: targetId, data } = getBlindService(device, action);
-      await callService(domain, service, targetId, data);
-      await loadStates();
+      await invokeService(domain, service, targetId, data);
     } catch {
       await loadStates();
     }
-  }, [zones, loadStates]);
+  }, [invokeService, loadStates]);
 
   const setFanLevel = useCallback(async (entityId: string, level: 1 | 2 | 3) => {
     if (!isHaConfigured()) return;
@@ -240,16 +383,16 @@ export function useHomeAssistant() {
     );
 
     try {
-      await callService('fan', 'turn_on', entityId, { percentage });
+      await invokeService('fan', 'turn_on', entityId, { percentage });
     } catch {
       await loadStates();
     }
-  }, [loadStates]);
+  }, [invokeService, loadStates]);
 
   const setAirconMode = useCallback(async (deviceId: string, mode: AirconMode) => {
     if (!isHaConfigured()) return;
 
-    const device = zones
+    const device = zonesRef.current
       .flatMap((zone) => zone.devices)
       .find((d) => d.id === deviceId && d.type === 'aircon');
 
@@ -266,12 +409,11 @@ export function useHomeAssistant() {
     );
 
     try {
-      await callService(action.domain, action.service, action.entityId);
-      await loadStates();
+      await invokeService(action.domain, action.service, action.entityId);
     } catch {
       await loadStates();
     }
-  }, [zones, loadStates]);
+  }, [invokeService, loadStates]);
 
   const updateDeviceLabel = useCallback((deviceId: string, label: string) => {
     const trimmed = label.trim();
@@ -312,91 +454,120 @@ export function useHomeAssistant() {
     );
   }, []);
 
-  const turnAllLightsOff = useCallback(async () => {
+  const turnAllLights = useCallback((action: 'on' | 'off') => {
     if (!isHaConfigured()) return;
 
-    const devicesOn = zones.flatMap((zone) =>
-      zone.devices
-        .filter((device) => (device.type === 'light' || device.type === 'switch') && device.isOn)
-        .map((device) => ({ zoneId: zone.id, device })),
+    const newOn = action === 'on';
+
+    const targetDevices = zonesRef.current
+      .flatMap((zone) => zone.devices)
+      .filter((device) => isLightDevice(device) && device.isOn !== newOn);
+
+    logDeviceToggle({
+      scope: 'all-lights',
+      action,
+      count: targetDevices.length,
+      entityIds: targetDevices.map((d) => d.entityId),
+    });
+
+    setZones((prev) =>
+      prev.map((zone) => ({
+        ...zone,
+        devices: zone.devices.map((device) =>
+          isLightDevice(device) ? { ...device, isOn: newOn } : device,
+        ),
+      })),
     );
 
-    for (const { device } of devicesOn) {
-      try {
-        const { domain, service, entityId, data } = getToggleAction(device);
-        await callService(domain, service, entityId, data);
-      } catch {
-        // continue turning off remaining lights
-      }
+    for (const device of targetDevices) {
+      markPendingToggle(device.entityId, newOn);
+      sendLightCommand(device, newOn ? 'turn_on' : 'turn_off', !newOn, newOn);
     }
+  }, [markPendingToggle, sendLightCommand]);
 
-    await loadStates();
-  }, [zones, loadStates]);
+  const turnAllLightsOn = useCallback(() => turnAllLights('on'), [turnAllLights]);
+  const turnAllLightsOff = useCallback(() => turnAllLights('off'), [turnAllLights]);
 
   const allBlindsAction = useCallback(async (action: BlindAction) => {
     if (!isHaConfigured()) return;
 
-    const blinds = zones.flatMap((zone) =>
-      zone.devices.filter((device) => device.type === 'blind'),
-    );
+    const blinds = zonesRef.current
+      .flatMap((zone) => zone.devices)
+      .filter((device) => device.type === 'blind');
 
     for (const device of blinds) {
       try {
         const { domain, service, entityId, data } = getBlindService(device, action);
-        await callService(domain, service, entityId, data);
+        await invokeService(domain, service, entityId, data);
       } catch {
         // continue with remaining blinds
       }
     }
-
-    await loadStates();
-  }, [zones, loadStates]);
+  }, [invokeService]);
 
   const turnAllFansOff = useCallback(async () => {
     if (!isHaConfigured()) return;
 
-    const fansOn = zones
+    const fansOn = zonesRef.current
       .flatMap((zone) => zone.devices)
       .filter((device) => device.type === 'fan' && device.isOn);
 
+    setZones((prev) =>
+      prev.map((zone) => ({
+        ...zone,
+        devices: zone.devices.map((device) =>
+          device.type === 'fan' ? { ...device, isOn: false, fanLevel: undefined } : device,
+        ),
+      })),
+    );
+
     for (const device of fansOn) {
       try {
-        await callService('fan', 'turn_off', device.entityId);
+        await invokeService('fan', 'turn_off', device.entityId);
       } catch {
         // continue
       }
     }
-
-    await loadStates();
-  }, [zones, loadStates]);
+  }, [invokeService]);
 
   const turnAllAirconOff = useCallback(async () => {
     if (!isHaConfigured()) return;
 
-    const airconsOn = zones
+    const airconsOn = zonesRef.current
       .flatMap((zone) => zone.devices)
       .filter((device) => device.type === 'aircon' && device.isOn);
+
+    setZones((prev) =>
+      prev.map((zone) => ({
+        ...zone,
+        devices: zone.devices.map((device) =>
+          device.type === 'aircon'
+            ? { ...device, isOn: false, airconMode: undefined }
+            : device,
+        ),
+      })),
+    );
 
     for (const device of airconsOn) {
       try {
         if (device.airconScenes?.off) {
-          await callService('scene', 'turn_on', device.airconScenes.off);
+          await invokeService('scene', 'turn_on', device.airconScenes.off);
         }
       } catch {
         // continue
       }
     }
-
-    await loadStates();
-  }, [zones, loadStates]);
+  }, [invokeService]);
 
   return {
     zones,
     weather,
     toggleDevice,
+    toggleLightByEntityId,
     blindAction,
     setFanLevel,
     setAirconMode,
+    turnAllLightsOn,
     turnAllLightsOff,
     turnAllFansOff,
     turnAllAirconOff,
@@ -407,4 +578,9 @@ export function useHomeAssistant() {
     updateDeviceLabel,
     resetDeviceLabel,
   };
+}
+
+async function fetchAllStatesFallback(): Promise<HassEntityState[]> {
+  const { fetchAllStates } = await import('../services/homeAssistant');
+  return fetchAllStates();
 }
