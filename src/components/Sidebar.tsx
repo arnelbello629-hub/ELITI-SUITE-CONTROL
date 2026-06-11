@@ -127,7 +127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [zones]);
 
   return (
-    <aside className="w-[360px] flex-shrink-0 flex flex-col gap-5 z-10 sidebar-panel p-8 overflow-y-auto hide-scrollbar">
+    <aside className="w-full lg:w-[360px] flex-shrink-0 flex flex-col gap-5 z-10 sidebar-panel p-8 overflow-y-auto hide-scrollbar min-w-0">
       <div className="mt-4">
         <div className="text-[64px] font-display font-light tracking-tighter text-gradient-premium leading-none">
           {timeString}

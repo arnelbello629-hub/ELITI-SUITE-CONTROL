@@ -103,7 +103,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onUpdateLabel,
   onResetLabel,
 }) => (
-  <div className="max-w-3xl">
+  <div className="max-w-3xl w-full min-w-0">
     <div className="mb-8">
       <h1 className="text-[28px] font-display font-medium text-white tracking-tight">Settings</h1>
       <p className="text-[14px] text-slate-300 mt-2">

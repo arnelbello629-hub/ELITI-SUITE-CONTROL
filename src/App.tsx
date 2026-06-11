@@ -246,7 +246,7 @@ const BlindCard: React.FC<BlindCardProps> = ({ device, onAction }) => {
   };
 
   return (
-    <div className="ha-card ha-card-off col-span-2 p-4 flex flex-col gap-3 text-left relative outline-none">
+    <div className="ha-card ha-card-off col-span-2 min-w-0 p-4 flex flex-col gap-3 text-left relative outline-none">
       <div className="flex items-center justify-between gap-3">
         <div
           className={`flex items-center justify-center w-10 h-10 shrink-0 rounded-full backdrop-blur-sm border transition-all ${
@@ -262,7 +262,7 @@ const BlindCard: React.FC<BlindCardProps> = ({ device, onAction }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-1.5">
+      <div className="grid grid-cols-5 gap-1.5 min-w-0 w-full">
         {BLIND_ACTIONS.map(({ action, label }) => (
           <button
             key={action}
@@ -286,7 +286,7 @@ const DeviceCard: React.FC<DeviceCardProps> = ({ device, onToggle, onFanLevel, o
   const isAircon = device.type === 'aircon';
 
   return (
-    <div className={`ha-card ${getDeviceCardClass(device, isOn)} p-[18px] flex flex-col justify-between aspect-[0.9] text-left relative overflow-hidden group`}>
+    <div className={`ha-card ${getDeviceCardClass(device, isOn)} min-w-0 p-[18px] flex flex-col justify-between aspect-[0.9] text-left relative overflow-hidden group`}>
       <button
         type="button"
         onClick={onToggle}
@@ -356,7 +356,7 @@ export default function App() {
   const dateString = currentTime.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
-    <div className="min-h-screen p-4 md:p-8 flex justify-center items-center relative overflow-hidden">
+    <div className="min-h-screen w-full max-w-[100vw] p-4 md:p-8 flex justify-center items-start lg:items-center relative overflow-x-hidden">
       {/* Background layers */}
       <div className="absolute inset-0 -z-10 pointer-events-none">
         <div className="absolute inset-0 flex items-center justify-center">
@@ -375,7 +375,7 @@ export default function App() {
           }}
         />
       </div>
-      <div className="flex w-full max-w-[1700px] h-[calc(100vh-64px)] gap-8">
+      <div className="relative flex w-full max-w-[1700px] min-w-0 flex-col lg:flex-row lg:h-[calc(100vh-64px)] gap-6 lg:gap-8">
         
         <Sidebar
           timeString={timeString}
@@ -394,7 +394,7 @@ export default function App() {
         />
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto hide-scrollbar z-10 mx-2 pl-6 pb-32">
+        <main className="flex-1 min-w-0 w-full lg:overflow-y-auto hide-scrollbar z-10 mx-0 lg:mx-2 pl-0 lg:pl-6 pb-28 lg:pb-32">
           {activeView === 'settings' ? (
             <SettingsPanel
               zones={zones}
@@ -402,13 +402,13 @@ export default function App() {
               onResetLabel={resetDeviceLabel}
             />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-y-12 gap-x-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-y-12 gap-x-6 min-w-0 w-full">
               {zones.map((zone) => (
-                <div key={zone.id} className="break-inside-avoid">
+                <div key={zone.id} className="break-inside-avoid min-w-0 w-full">
                   <h2 className="text-[20px] font-display font-medium text-white mb-6 tracking-wide text-center w-full">
                     {zone.name}
                   </h2>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-3 min-w-0 w-full">
                     {zone.devices.map((device) =>
                       device.type === 'blind' ? (
                         <BlindCard
@@ -445,9 +445,9 @@ export default function App() {
           )}
         </main>
         
-        {/* Absolute Bottom Navigation Bar */}
-        <div className="absolute bottom-10 right-10 left-[410px] z-50 flex justify-center pointer-events-none">
-          <div className="flex gap-2 pointer-events-auto glass-pill p-2 rounded-full">
+        {/* Bottom Navigation Bar — desktop position unchanged at lg+ */}
+        <div className="fixed lg:absolute bottom-4 lg:bottom-10 left-4 right-4 lg:left-[410px] lg:right-10 z-50 flex justify-center pointer-events-none max-w-[calc(100vw-2rem)] lg:max-w-none mx-auto lg:mx-0">
+          <div className="flex gap-2 pointer-events-auto glass-pill p-2 rounded-full max-w-full overflow-x-auto hide-scrollbar dashboard-nav-scroll">
             {([
               { id: 'dashboard' as const, icon: Sun, label: 'Scenes' },
               { id: 'dashboard' as const, icon: Repeat, label: 'Automations' },
